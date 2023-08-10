@@ -3,7 +3,7 @@ AmazonECSクラスター環境、AWSCodeシリーズを使用したCI/CD環境�
 VPC、Auroraスナップショット、コンテナイメージを指定し実行することで、指定のVPC環境に既存のAmazonECS環境を複製できます。
 
 ## 構成
-![構成図](./img/構成図_ECS_Sample.png)
+![構成図](./image/構成図_ECS_Sample.png)
 
 ## 自動で作成されるリソース
 #### Sample_CF_Aurora.yaml
