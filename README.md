@@ -96,6 +96,10 @@ VPC、Auroraスナップショット、コンテナイメージを指定し実�
 - Systems Manager パラメータストア
 
 ## 詳細
+#### Auora
+- パラメータに指定したAuroraスナップショットが復元されます。
+- 作成したAuroraのエンドポイント名をパラメータストアに手動で反映することで、以降デプロイされるコンテナに情報が渡されます。
+
 #### NLB
 - コンテナ接続用のNLBです。
 - 構築後DNS名でアクセス、またはDNS名をRoute53レコードに登録いただくことで指定のドメインからコンテナにアクセス可能です。
@@ -119,4 +123,19 @@ VPC、Auroraスナップショット、コンテナイメージを指定し実�
   - コンピューティング：3 GB メモリ、2 vCPU
 
 #### CodeDeploy
-- 
+- ECS BGデプロイメントグループはCloudFormationでサポートされていないことから、CodeDeployはAWS Lambda-backed カスタムリソースを利用しています。
+- CFコード内のLambda関数にはCFスタック作成時にCodeDeployを作成、CFスタック削除時にCodeDeployを削除する処理が記載されています。
+  - 参考：https://docs.aws.amazon.com/ja_jp/AWSCloudFormation/latest/UserGuide/template-custom-resources-lambda.html<br>https://docs.aws.amazon.com/ja_jp/AWSCloudFormation/latest/UserGuide/template-custom-resources.html
+
+#### CodePipeline
+- アーティファクト用S3バケットとCodePipelineが作成されます。
+- パラメータで指定したS3バケット、オブジェクトキーが、Sourceステージに登録されます。
+- CFスタックを削除する際、アーティファクト用S3バケット内のオブジェクトを手動ですべて削除する必要があります。
+
+## 使用の流れ
+1. 既存のサブネットグループ、Auroraスナップショットを指定し、Sample_CF_Aurora.yamlを実行。
+2. 作成されたAuoraのエンドポイント名をパラメータストアに手動で登録。
+3. 既存のVPC/サブネット、コンテナイメージを指定し、Sample_CF_ECS_CICD.yamlを実行。
+4. 環境構築後、S3バケットにソースコードのZIPファイルをアップロードすることで、パイプラインが起動しコンテナがデプロイされる。
+5. NLB DNS名をRoute53のレコードに登録。
+6. 登録したドメインから構築した環境にアクセス。
