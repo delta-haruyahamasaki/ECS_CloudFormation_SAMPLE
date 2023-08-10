@@ -379,29 +379,12 @@ Resources:
         - !Ref LambdaRole
 
 
-####### Blue Green Artifact S3 Bucket #######
-
-  BGArtifactBucket:
-    Type: AWS::S3::Bucket
-    Properties:
-      BucketName: !Sub "sample-artifact-${AWS::AccountId}"
-      BucketEncryption:
-        ServerSideEncryptionConfiguration:
-          - ServerSideEncryptionByDefault:
-              SSEAlgorithm: "AES256"
-      PublicAccessBlockConfiguration:
-        BlockPublicAcls: TRUE
-        BlockPublicPolicy: TRUE
-        IgnorePublicAcls: TRUE
-        RestrictPublicBuckets: TRUE
-
-
 ####### Code Build LogGroup #######
 
   CodeBuildLogGroup:
     Type: "AWS::Logs::LogGroup"
     Properties:
-      LogGroupName: !Sub "sample-bg-cicd-code-build"
+      LogGroupName: "sample-bg-cicd-code-build"
 
 
 ####### Code Build #######
@@ -412,7 +395,7 @@ Resources:
       - CodeBuildServicePolicy
       - LambdaPolicy
     Properties:
-      Name: !Sub "sample-code-build"
+      Name: "sample-code-build"
       Environment:
         PrivilegedMode: true
         ComputeType: BUILD_GENERAL1_SMALL
@@ -572,6 +555,22 @@ Resources:
       ALBListener2: !Ref SampleListenerGreen
       appName: "sample-AppECS-service"
       deploymentGroup: "sample-DgpECS-service"
+
+####### Blue Green Artifact S3 Bucket #######
+
+  BGArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "sample-artifact-${AWS::AccountId}"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: "AES256"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: TRUE
+        BlockPublicPolicy: TRUE
+        IgnorePublicAcls: TRUE
+        RestrictPublicBuckets: TRUE
 
 
 ####### Code Pipeline #######
