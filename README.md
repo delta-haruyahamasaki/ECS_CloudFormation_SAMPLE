@@ -18,26 +18,47 @@ VPC、Auroraスナップショット、コンテナイメージを指定し実�
   - TargetGroup(Green)
   - Listener(Blue)
   - Listener(Green)
+
+<br>
+
 - タスク定義
   - コンテナ用LogGroup
   - タスク実行ロール
   - タスク定義
+
+<br>
+
 - ECSクラスター
   - ECSクラスター
   - ECSサービス
+
+<br>
+
 - CI/CD用 IAM Role, Policy
   - CodeBuild IAM Role
   - CodeBuild IAM Policy
   - CodeDeploy IAM Role
   - CodeDeploy IAM Policy
+
+<br>
+
 - カスタムリソースLambda用 IAM Role, Policy
   - Lambda IAM Role
   - Lambda IAM Policy
+
+<br>
+
 - Blue Green Artifact S3バケット
   - S3バケット
+
+<br>
+
 - Code Build
   - CodeBuild用LogGroup
   - CodeBuild
+
+<br>
+
 - Code Deploy
   - アプリケーション
   - デプロイグループ
