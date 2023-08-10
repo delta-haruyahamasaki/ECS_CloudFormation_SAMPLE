@@ -125,7 +125,7 @@ VPC、Auroraスナップショット、コンテナイメージを指定し実�
 #### CodeDeploy
 - ECS BGデプロイメントグループはCloudFormationでサポートされていないことから、CodeDeployはAWS Lambda-backed カスタムリソースを利用しています。
 - CFコード内のLambda関数にはCFスタック作成時にCodeDeployを作成、CFスタック削除時にCodeDeployを削除する処理が記載されています。
-  - 参考：https://docs.aws.amazon.com/ja_jp/AWSCloudFormation/latest/UserGuide/template-custom-resources-lambda.html<br>https://docs.aws.amazon.com/ja_jp/AWSCloudFormation/latest/UserGuide/template-custom-resources.html
+  - 参考：<br>https://docs.aws.amazon.com/ja_jp/AWSCloudFormation/latest/UserGuide/template-custom-resources-lambda.html<br>https://docs.aws.amazon.com/ja_jp/AWSCloudFormation/latest/UserGuide/template-custom-resources.html
 
 #### CodePipeline
 - アーティファクト用S3バケットとCodePipelineが作成されます。
