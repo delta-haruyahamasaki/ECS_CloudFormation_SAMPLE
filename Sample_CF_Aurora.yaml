@@ -29,6 +29,7 @@ Parameters:
     Description: List of Security Group IDs for the database cluster and instance
     Type: List<AWS::EC2::SecurityGroup::Id>
 
+
 Resources:
   AuroraDBCluster:
     Type: AWS::RDS::DBCluster
