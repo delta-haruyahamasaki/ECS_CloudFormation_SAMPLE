@@ -1,0 +1,637 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: ECS Task Definition with Task Execution Role and CloudWatch Logs Group
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      -
+        Label:
+          default: Nlb Configuration
+        Parameters:
+          - NlbSubnets
+          - TargetGroupVpcId
+      -
+        Label:
+          default: ECS Configuration
+        Parameters:
+          - ContainerDefinitionsImage
+          - EcsServiceSecurityGroups
+          - EcsServiceSubnets
+      -
+        Label:
+          default: CodePipeline Configuration
+        Parameters:
+          - SourceS3Bucket
+          - SourceS3ObjectKey
+  
+Parameters:
+  NlbSubnets:
+    Description: Subnets for Network Load Balancer
+    Type: List<AWS::EC2::Subnet::Id>
+  TargetGroupVpcId:
+    Description: VPC that contains the instances you want to include in your target group
+    Type: String
+  ContainerDefinitionsImage:
+    Description: Image for ECS service is created
+    Type: String
+  EcsServiceSecurityGroups:
+    Description: SecurityGroup for ECS Service
+    Type: List<AWS::EC2::SecurityGroup::Id>
+  EcsServiceSubnets:
+    Description: Subnet for ECS Service
+    Type: List<AWS::EC2::Subnet::Id>
+  SourceS3Bucket:
+    Description: S3Bucket Name for CodePipleLine input artifact
+    Type: String
+    Default: sample-input-artifact-accountid
+  SourceS3ObjectKey:
+    Description: ObjectKey for CodePipleLine
+    Type: String
+    Default: sample.zip
+
+Resources:
+# ------------------------------------------------------------#
+#  NLB/ECS
+# ------------------------------------------------------------#
+
+####### Network Load Balancer #######
+
+  SampleNLB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: SampleNLB
+      Subnets: !Ref NlbSubnets
+      Type: network
+      Scheme: internal
+
+  SampleTargetGroupBlue:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: SampleTargetGroupBlue
+      Port: 80
+      Protocol: TCP
+      VpcId: !Ref TargetGroupVpcId
+      TargetType: ip
+
+  SampleListenerBlue:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref SampleNLB
+      Port: 80
+      Protocol: TCP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref SampleTargetGroupBlue
+
+  SampleTargetGroupGreen:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: SampleTargetGroupGreen
+      Port: 80
+      Protocol: TCP
+      VpcId: !Ref TargetGroupVpcId
+      TargetType: ip
+
+  SampleListenerGreen:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref SampleNLB
+      Port: 10080
+      Protocol: TCP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref SampleTargetGroupGreen
+
+
+####### Task Definition #######
+
+  SampleLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /ecs/SampleTaskDefinitionFamily
+      RetentionInDays: 14
+
+  SampleExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: SampleECSExecutionRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AdministratorAccess
+        - arn:aws:iam::aws:policy/AmazonSSMReadOnlyAccess
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+        - arn:aws:iam::aws:policy/SecretsManagerReadWrite
+
+  SampleTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: SampleTaskDefinitionFamily
+      ExecutionRoleArn: !GetAtt SampleExecutionRole.Arn
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: '256'
+      Memory: '512'
+      NetworkMode: awsvpc
+      ContainerDefinitions:
+        - Name: SampleContainer
+          Image: !Ref ContainerDefinitionsImage
+          Essential: true
+          PortMappings:
+            - HostPort: 80
+              ContainerPort: 80
+              Protocol: tcp
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref SampleLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+          MemoryReservation: 128
+          Secrets:
+            - Name: DB_HOST
+              ValueFrom: /SAMPLE/DB_HOST
+            - Name: DB_NAME
+              ValueFrom: /SAMPLE/DB_NAME
+            - Name: DB_USERNAME
+              ValueFrom: /SAMPLE/DB_USERNAME
+            - Name: DB_PASSWORD
+              ValueFrom: /SAMPLE/DB_PASSWORD
+
+####### ECS Cluster #######
+
+  SampleCodeDeployServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: SampleCodeDeployServiceRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codedeploy.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMReadOnlyAccess
+        - arn:aws:iam::aws:policy/AWSCodeDeployRoleForECS
+
+  SampleCluster:
+      Type: AWS::ECS::Cluster
+      Properties:
+        ClusterName: SampleECSCluster
+        ClusterSettings:
+          - Name: containerInsights
+            Value: enabled
+
+  SampleService:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !Ref SampleCluster
+      DesiredCount: 1
+      DeploymentController:
+        Type: CODE_DEPLOY
+      LaunchType: FARGATE
+      TaskDefinition: !Ref SampleTaskDefinition
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups: !Ref EcsServiceSecurityGroups
+          Subnets: !Ref EcsServiceSubnets
+      LoadBalancers:
+        - TargetGroupArn: !Ref SampleTargetGroupBlue
+          ContainerName: SampleContainer
+          ContainerPort: 80
+    DependsOn:
+      - SampleListenerBlue
+      - SampleListenerGreen
+
+
+# ------------------------------------------------------------#
+#  CI/CD
+# ------------------------------------------------------------#
+
+
+####### CICD Role #######
+
+  CodeBuildServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: "sample-codebuild-service-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser
+
+  CodeBuildServicePolicy:
+    DependsOn: CodePipelineServiceRole
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: "sample-codebuild-service-policy"
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Resource: "*"
+            Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+          - Resource: "arn:aws:s3:::*"
+            Effect: Allow
+            Action:
+              - s3:GetObject
+              - s3:PutObject
+              - s3:GetObjectVersion
+              - s3:GetBucketAcl
+              - s3:GetBucketLocation
+          - Resource: "*"
+            Effect: Allow
+            Action:
+              - codebuild:CreateReportGroup
+              - codebuild:CreateReport
+              - codebuild:UpdateReport
+              - codebuild:BatchPutTestCases
+              - codebuild:BatchPutCodeCoverages
+      Roles:
+        - !Ref CodeBuildServiceRole
+
+  CodeDeployServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: "sample-codedeploy-service-role"
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codedeploy.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AWSCodeDeployRoleForECS
+        - arn:aws:iam::aws:policy/AmazonSSMReadOnlyAccess
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser
+
+  CodePipelineServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: "sample-codepipeline-service-role"
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action: sts:AssumeRole
+
+  CodePipelineServicePolicy:
+    Type: AWS::IAM::Policy
+    DependsOn: CodePipelineServiceRole
+    Properties:
+      PolicyName: "sample-codepipeline-service-policy"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Resource: "*"
+            Effect: Allow
+            Action:
+              - codecommit:GetRepository
+              - codecommit:GetBranch
+              - codecommit:GetCommit
+              - codecommit:ListBranches
+              - codecommit:GetUploadArchiveStatus
+              - codecommit:UploadArchive
+              - codecommit:CancelUploadArchive
+              - codedeploy:CreateDeployment
+              - codedeploy:GetApplication
+              - codedeploy:GetApplicationRevision
+              - codedeploy:GetDeployment
+              - codedeploy:GetDeploymentConfig
+              - codedeploy:RegisterApplicationRevision
+              - codebuild:StartBuild
+              - codebuild:StopBuild
+              - codebuild:BatchGet*
+              - codebuild:Get*
+              - codebuild:List*
+              - codecommit:GetBranch
+              - codecommit:GetCommit
+              - s3:*
+              - ecs:*
+              - elasticloadbalancing:*
+              - autoscaling:*
+              - cloudformation:*
+              - iam:PassRole
+              - codestar-connections:UseConnection
+      Roles:
+        - !Ref CodePipelineServiceRole
+
+
+####### IAMRole For CustomResource Lambda #######
+
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: "sample-bg-deploy-groupe-lambda-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSCodeDeployFullAccess
+
+  LambdaPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: "sample-bg-deploy-groupe-lambda-policy"
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - ec2:*
+              - logs:*
+            Resource: '*'
+          - Effect: Allow
+            Resource: '*'
+            Action:
+              - iam:PassRole
+            Condition:
+              StringEqualsIfExists:
+                iam:PassedToService:
+                  - codedeploy.amazonaws.com
+      Roles:
+        - !Ref LambdaRole
+
+
+####### Blue Green Artifact S3 Bucket #######
+
+  BGArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "sample-artifact-${AWS::AccountId}"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: "AES256"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: TRUE
+        BlockPublicPolicy: TRUE
+        IgnorePublicAcls: TRUE
+        RestrictPublicBuckets: TRUE
+
+
+####### Code Build LogGroup #######
+
+  CodeBuildLogGroup:
+    Type: "AWS::Logs::LogGroup"
+    Properties:
+      LogGroupName: !Sub "sample-bg-cicd-code-build"
+
+
+####### Code Build #######
+
+  CodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    DependsOn:
+      - CodeBuildServicePolicy
+      - LambdaPolicy
+    Properties:
+      Name: !Sub "sample-code-build"
+      Environment:
+        PrivilegedMode: true
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: "aws/codebuild/amazonlinux2-x86_64-standard:4.0"
+        Type: LINUX_CONTAINER
+      Artifacts:
+        Type: CODEPIPELINE
+      Source:
+        Type: CODEPIPELINE
+      ServiceRole: !Ref CodeBuildServiceRole
+      LogsConfig: 
+        CloudWatchLogs:
+          Status: "ENABLED"
+          GroupName: !Ref CodeBuildLogGroup
+      Visibility: "PRIVATE"
+
+
+####### Lambda for Create BG Deployment Group #######
+
+  LambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    DeletionPolicy: 'Delete'
+    Properties:
+      Code:
+        ZipFile: |
+          import boto3
+          import json
+          import logging
+          import cfnresponse
+          from botocore.exceptions import ClientError
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+          client = boto3.client('codedeploy')
+
+          def lambda_handler(event, context):
+
+              requestType = event['RequestType']
+              appName = event['ResourceProperties']['appName']
+              deploymentGroup = event['ResourceProperties']['deploymentGroup']
+              clusterName = event['ResourceProperties']['ECSClusterName']
+              serviceName = event['ResourceProperties']['ECSServiceName']
+
+              print('REQUEST RECEIVED:\n' + json.dumps(event))
+              responseData = {}
+              try:
+                if requestType == "Create":
+                  res = client.create_application(
+                      applicationName=appName,
+                      computePlatform='ECS'
+                  )
+                  logger.info(res)
+                  logger.info("SUCCESS: CodeDeploy Application created.")
+                  res = client.create_deployment_group(
+                      applicationName=appName,
+                      deploymentGroupName=deploymentGroup,
+                      deploymentConfigName='CodeDeployDefault.ECSAllAtOnce',
+                      serviceRoleArn=event['ResourceProperties']['CodeDeployServiceRoleArn'],
+                      autoRollbackConfiguration={
+                          'enabled': True,
+                          'events': [
+                              'DEPLOYMENT_FAILURE',
+                          ]
+                      },
+                      deploymentStyle={
+                          'deploymentType': 'BLUE_GREEN',
+                          'deploymentOption': 'WITH_TRAFFIC_CONTROL'
+                      },
+                      blueGreenDeploymentConfiguration={
+                          'terminateBlueInstancesOnDeploymentSuccess': {
+                              'action': 'TERMINATE',
+                              'terminationWaitTimeInMinutes': 5
+                          },
+                          'deploymentReadyOption': {
+                              'actionOnTimeout': 'STOP_DEPLOYMENT',
+                              'waitTimeInMinutes': 5
+                          }
+                      },
+                      loadBalancerInfo={
+                          'targetGroupPairInfoList': [
+                              {
+                                  'targetGroups': [
+                                      {
+                                          'name': event['ResourceProperties']['TargetGroup1']
+                                      },
+                                      {
+                                          'name': event['ResourceProperties']['TargetGroup2']
+                                      },
+                                  ],
+                                  'prodTrafficRoute': {
+                                      'listenerArns': [
+                                          event['ResourceProperties']['ALBListener1'],
+                                      ]
+                                  },
+                                  'testTrafficRoute': {
+                                      'listenerArns': [
+                                          event['ResourceProperties']['ALBListener2'],
+                                      ]
+                                  }
+                              },
+                          ]
+                      },
+                      ecsServices=[
+                          {
+                              'serviceName': event['ResourceProperties']['ECSServiceName'],
+                              'clusterName': event['ResourceProperties']['ECSClusterName']
+                          },
+                      ]
+                  )
+                elif requestType == "Delete":
+                  res = client.delete_application(
+                      applicationName=appName
+                  )
+                  logger.info(res)
+                  logger.info("SUCCESS: CodeDeploy Application deleted.")
+                  res = client.delete_deployment_group(
+                      applicationName=appName,
+                      deploymentGroupName=deploymentGroup
+                  )
+              except ClientError as e:
+                  logger.error("ERROR: Something error!")
+                  logger.error(e)
+                  responseData = {'error': str(e)}
+                  cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
+              else:
+                  if requestType == "Create":
+                    logger.info(res)
+                    logger.info(
+                        "SUCCESS: CodeDeploy Application and DeploymentGroup created.")
+                    return cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+                  elif requestType == "Delete":
+                    logger.info(res)
+                    logger.info(
+                        "SUCCESS: CodeDeploy Application and DeploymentGroup deleted.")
+                    return cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaRole.Arn
+      Runtime: python3.11
+      Timeout: 10
+
+
+####### Custom Resource #######
+
+  CreateCodeDeploy:
+    Type: Custom::CreateCodeDeploy
+    DependsOn:
+      - CodeDeployServiceRole
+    Properties:
+      ServiceToken: !GetAtt LambdaFunction.Arn
+      Region: !Ref AWS::Region
+      ECSClusterName: !Ref SampleCluster
+      ECSServiceName: !GetAtt SampleService.Name
+      CodeDeployServiceRoleArn: !GetAtt CodeDeployServiceRole.Arn
+      TargetGroup1: !GetAtt SampleTargetGroupBlue.TargetGroupName
+      TargetGroup2: !GetAtt SampleTargetGroupGreen.TargetGroupName
+      ALBListener1: !Ref SampleListenerBlue
+      ALBListener2: !Ref SampleListenerGreen
+      appName: "sample-AppECS-service"
+      deploymentGroup: "sample-DgpECS-service"
+
+
+####### Code Pipeline #######
+
+  Pipeline:
+    Type: AWS::CodePipeline::Pipeline
+    DependsOn:
+      - CodePipelineServicePolicy
+      - SampleService
+    Properties:
+      RoleArn: !GetAtt CodePipelineServiceRole.Arn
+      Name: "sample-code-pipeline"
+      ArtifactStore:
+        Type: S3
+        Location: !Ref BGArtifactBucket
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: Source
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Version: 1
+                Provider: S3
+              Configuration:
+                S3Bucket: !Ref SourceS3Bucket
+                S3ObjectKey: !Ref SourceS3ObjectKey
+              OutputArtifacts:
+                - Name: SourceArtifact
+        - Name: Build
+          Actions:
+            - Name: Build
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Version: 1
+                Provider: CodeBuild
+              Configuration:
+                ProjectName: !Ref CodeBuildProject
+              RunOrder: 1
+              InputArtifacts:
+                - Name: SourceArtifact
+              OutputArtifacts:
+                - Name: BuildArtifact
+        - Name: Deploy
+          Actions:
+            - Name: Deploy
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Version: 1
+                Provider: CodeDeployToECS
+              Configuration:
+                AppSpecTemplateArtifact: SourceArtifact
+                TaskDefinitionTemplateArtifact: SourceArtifact
+                ApplicationName: "sample-AppECS-service"
+                DeploymentGroupName: "sample-DgpECS-service"
+                Image1ArtifactName:  BuildArtifact
+                Image1ContainerName: IMAGE1_NAME
+              InputArtifacts:
+                - Name: SourceArtifact
+                - Name: BuildArtifact
+              Region: !Ref AWS::Region
