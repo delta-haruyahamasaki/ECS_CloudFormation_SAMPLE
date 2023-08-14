@@ -1,0 +1,156 @@
+AWSTemplateFormatVersion: 2010-09-09
+Parameters:
+  EnvPrefix:
+    Type: String
+  LambdaRole:
+    Type: String
+  SampleCluster:
+    Type: String
+  SampleService:
+    Type: String
+  CodeDeployServiceRole:
+    Type: String
+  SampleListenerBlue:
+    Type: String
+  SampleListenerGreen:
+    Type: String
+
+Resources:
+  LambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    DeletionPolicy: 'Delete'
+    Properties:
+      Code:
+        ZipFile: |
+          import boto3
+          import json
+          import logging
+          import cfnresponse
+          from botocore.exceptions import ClientError
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+          client = boto3.client('codedeploy')
+
+          def lambda_handler(event, context):
+
+              requestType = event['RequestType']
+              appName = event['ResourceProperties']['appName']
+              deploymentGroup = event['ResourceProperties']['deploymentGroup']
+              clusterName = event['ResourceProperties']['ECSClusterName']
+              serviceName = event['ResourceProperties']['ECSServiceName']
+
+              print('REQUEST RECEIVED:\n' + json.dumps(event))
+              responseData = {}
+              try:
+                if requestType == "Create":
+                  res = client.create_application(
+                      applicationName=appName,
+                      computePlatform='ECS'
+                  )
+                  logger.info(res)
+                  logger.info("SUCCESS: CodeDeploy Application created.")
+                  res = client.create_deployment_group(
+                      applicationName=appName,
+                      deploymentGroupName=deploymentGroup,
+                      deploymentConfigName='CodeDeployDefault.ECSAllAtOnce',
+                      serviceRoleArn=event['ResourceProperties']['CodeDeployServiceRoleArn'],
+                      autoRollbackConfiguration={
+                          'enabled': True,
+                          'events': [
+                              'DEPLOYMENT_FAILURE',
+                          ]
+                      },
+                      deploymentStyle={
+                          'deploymentType': 'BLUE_GREEN',
+                          'deploymentOption': 'WITH_TRAFFIC_CONTROL'
+                      },
+                      blueGreenDeploymentConfiguration={
+                          'terminateBlueInstancesOnDeploymentSuccess': {
+                              'action': 'TERMINATE',
+                              'terminationWaitTimeInMinutes': 5
+                          },
+                          'deploymentReadyOption': {
+                              'actionOnTimeout': 'STOP_DEPLOYMENT',
+                              'waitTimeInMinutes': 5
+                          }
+                      },
+                      loadBalancerInfo={
+                          'targetGroupPairInfoList': [
+                              {
+                                  'targetGroups': [
+                                      {
+                                          'name': event['ResourceProperties']['TargetGroup1']
+                                      },
+                                      {
+                                          'name': event['ResourceProperties']['TargetGroup2']
+                                      },
+                                  ],
+                                  'prodTrafficRoute': {
+                                      'listenerArns': [
+                                          event['ResourceProperties']['ALBListener1'],
+                                      ]
+                                  },
+                                  'testTrafficRoute': {
+                                      'listenerArns': [
+                                          event['ResourceProperties']['ALBListener2'],
+                                      ]
+                                  }
+                              },
+                          ]
+                      },
+                      ecsServices=[
+                          {
+                              'serviceName': event['ResourceProperties']['ECSServiceName'],
+                              'clusterName': event['ResourceProperties']['ECSClusterName']
+                          },
+                      ]
+                  )
+                elif requestType == "Delete":
+                  res = client.delete_application(
+                      applicationName=appName
+                  )
+                  logger.info(res)
+                  logger.info("SUCCESS: CodeDeploy Application deleted.")
+                  res = client.delete_deployment_group(
+                      applicationName=appName,
+                      deploymentGroupName=deploymentGroup
+                  )
+              except ClientError as e:
+                  logger.error("ERROR: Something error!")
+                  logger.error(e)
+                  responseData = {'error': str(e)}
+                  cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
+              else:
+                  if requestType == "Create":
+                    logger.info(res)
+                    logger.info(
+                        "SUCCESS: CodeDeploy Application and DeploymentGroup created.")
+                    return cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+                  elif requestType == "Delete":
+                    logger.info(res)
+                    logger.info(
+                        "SUCCESS: CodeDeploy Application and DeploymentGroup deleted.")
+                    return cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+      Handler: index.lambda_handler
+      Role: !Ref LambdaRole
+      Runtime: python3.11
+      Timeout: 10
+
+
+####### Custom Resource #######
+
+  CreateCodeDeploy:
+    Type: Custom::CreateCodeDeploy
+    Properties:
+      ServiceToken: !GetAtt LambdaFunction.Arn
+      Region: !Ref AWS::Region
+      ECSClusterName: !Ref SampleCluster
+      ECSServiceName: !Ref SampleService
+      CodeDeployServiceRoleArn: !Ref CodeDeployServiceRole
+      TargetGroup1: !Sub ${EnvPrefix}-SampleTargetGroupBlue
+      TargetGroup2: !Sub ${EnvPrefix}-SampleTargetGroupGreen
+      ALBListener1: !Ref SampleListenerBlue
+      ALBListener2: !Ref SampleListenerGreen
+      appName: !Sub ${EnvPrefix}-sample-AppECS-service
+      deploymentGroup: !Sub ${EnvPrefix}-sample-DgpECS-service

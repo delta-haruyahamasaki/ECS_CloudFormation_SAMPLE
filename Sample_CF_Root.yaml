@@ -1,0 +1,179 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: ECS Task Definition with Task Execution Role and CloudWatch Logs Group
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      -
+        Label:
+          default: Environment
+        Parameters:
+          - EnvPrefix
+      -
+        Label:
+          default: TemplateBucket
+        Parameters:
+          - TemplateBucketName
+      -
+        Label:
+          default: Nlb Configuration
+        Parameters:
+          - NlbSubnets
+          - TargetGroupVpcId
+      -
+        Label:
+          default: ECS Configuration
+        Parameters:
+          - ContainerDefinitionsImage
+          - EcsServiceSecurityGroups
+          - EcsServiceSubnets
+      -
+        Label:
+          default: CodePipeline Configuration
+        Parameters:
+          - SourceS3Bucket
+          - SourceS3ObjectKey
+  
+Parameters:
+  EnvPrefix:
+    Description: Select Environment
+    Type: String
+    AllowedValues:
+      - hotfix
+      - candidate
+  TemplateBucketName:
+    Description: S3Bucket Name for Location of file containing the template body
+    Type: String
+  NlbSubnets:
+    Description: Subnets for Network Load Balancer
+    Type: List<AWS::EC2::Subnet::Id>
+  TargetGroupVpcId:
+    Description: VPC that contains the instances you want to include in your target group
+    Type: String
+  ContainerDefinitionsImage:
+    Description: Image for ECS service is created
+    Type: String
+  EcsServiceSecurityGroups:
+    Description: SecurityGroup for ECS Service
+    Type: List<AWS::EC2::SecurityGroup::Id>
+  EcsServiceSubnets:
+    Description: Subnet for ECS Service
+    Type: List<AWS::EC2::Subnet::Id>
+  SourceS3Bucket:
+    Description: S3Bucket Name for CodePipleLine input artifact
+    Type: String
+    Default: sample-input-artifact-accountid
+  SourceS3ObjectKey:
+    Description: ObjectKey for CodePipleLine
+    Type: String
+    Default: sample.zip
+
+Resources:
+# ------------------------------------------------------------#
+#  NLB/ECS
+# ------------------------------------------------------------#
+
+####### Network Load Balancer #######
+
+  NetworkStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://${TemplateBucketName}.s3.${AWS::Region}.amazonaws.com/Sample_CF_Network.yaml"
+      Parameters:
+        EnvPrefix: !Ref EnvPrefix
+        NlbSubnets: !Join
+          - ','
+          - !Ref NlbSubnets
+        TargetGroupVpcId: !Ref TargetGroupVpcId
+
+
+####### Task Definition #######
+
+  TaskDefinitionStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://${TemplateBucketName}.s3.${AWS::Region}.amazonaws.com/Sample_CF_TaskDefinition.yaml"
+      Parameters:
+        EnvPrefix: !Ref EnvPrefix
+        ContainerDefinitionsImage: !Ref ContainerDefinitionsImage
+
+
+####### ECS Cluster #######
+
+  ECSStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - NetworkStack
+      - TaskDefinitionStack
+    Properties:
+      TemplateURL: !Sub "https://${TemplateBucketName}.s3.${AWS::Region}.amazonaws.com/Sample_CF_ECS.yaml"
+      Parameters:
+        EnvPrefix: !Ref EnvPrefix
+        EcsServiceSecurityGroups: !Join 
+          - ','
+          - !Ref EcsServiceSecurityGroups
+        EcsServiceSubnets: !Join 
+          - ','
+          - !Ref EcsServiceSubnets
+        SampleTaskDefinition: !GetAtt TaskDefinitionStack.Outputs.SampleTaskDefinition
+        SampleTargetGroupBlue: !GetAtt NetworkStack.Outputs.SampleTargetGroupBlue
+
+
+# ------------------------------------------------------------#
+#  CI/CD
+# ------------------------------------------------------------#
+
+####### CICD Role #######
+
+  CICDRoleStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://${TemplateBucketName}.s3.${AWS::Region}.amazonaws.com/Sample_CF_CICD_Role.yaml"
+      Parameters:
+        EnvPrefix: !Ref EnvPrefix
+
+####### Code Build #######
+
+  CodeBuildStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - CICDRoleStack
+    Properties:
+      TemplateURL: !Sub "https://${TemplateBucketName}.s3.${AWS::Region}.amazonaws.com/Sample_CF_CodeBuild.yaml"
+      Parameters:
+        EnvPrefix: !Ref EnvPrefix
+        CodeBuildServiceRole: !GetAtt CICDRoleStack.Outputs.CodeBuildServiceRole
+
+####### Code Deploy #######
+
+  CodeDeployStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - CICDRoleStack
+      - ECSStack
+    Properties:
+      TemplateURL: !Sub "https://${TemplateBucketName}.s3.${AWS::Region}.amazonaws.com/Sample_CF_CodeDeploy.yaml"
+      Parameters:
+        EnvPrefix: !Ref EnvPrefix
+        CodeDeployServiceRole: !GetAtt CICDRoleStack.Outputs.CodeDeployServiceRole
+        LambdaRole: !GetAtt CICDRoleStack.Outputs.LambdaRole
+        SampleCluster: !GetAtt ECSStack.Outputs.SampleCluster
+        SampleService: !GetAtt ECSStack.Outputs.SampleService
+        SampleListenerBlue: !GetAtt NetworkStack.Outputs.SampleListenerBlue
+        SampleListenerGreen: !GetAtt NetworkStack.Outputs.SampleListenerGreen
+
+####### Code Pipeline #######
+
+  CodePipelineStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - CICDRoleStack
+      - ECSStack
+    Properties:
+      TemplateURL: !Sub "https://${TemplateBucketName}.s3.${AWS::Region}.amazonaws.com/Sample_CF_CodePipeline.yaml"
+      Parameters:
+        EnvPrefix: !Ref EnvPrefix
+        SourceS3Bucket: !Ref SourceS3Bucket
+        SourceS3ObjectKey: !Ref SourceS3ObjectKey
+        CodePipelineServiceRole: !GetAtt CICDRoleStack.Outputs.CodePipelineServiceRole
+        CodeBuildProject: !GetAtt CodeBuildStack.Outputs.CodeBuildProject

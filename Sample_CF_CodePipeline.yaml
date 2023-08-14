@@ -1,0 +1,84 @@
+AWSTemplateFormatVersion: 2010-09-09
+Parameters:
+  EnvPrefix:
+    Type: String
+  CodePipelineServiceRole:
+    Type: String
+  SourceS3Bucket:
+    Type: String
+  SourceS3ObjectKey:
+    Type: String
+  CodeBuildProject:
+    Type: String
+
+Resources:
+  BGArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${EnvPrefix}-sample-artifact-${AWS::AccountId}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: "AES256"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: TRUE
+        BlockPublicPolicy: TRUE
+        IgnorePublicAcls: TRUE
+        RestrictPublicBuckets: TRUE
+
+  Pipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      RoleArn: !Ref CodePipelineServiceRole
+      Name: !Sub ${EnvPrefix}-sample-code-pipeline
+      ArtifactStore:
+        Type: S3
+        Location: !Ref BGArtifactBucket
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: Source
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Version: 1
+                Provider: S3
+              Configuration:
+                S3Bucket: !Ref SourceS3Bucket
+                S3ObjectKey: !Ref SourceS3ObjectKey
+              OutputArtifacts:
+                - Name: SourceArtifact
+        - Name: Build
+          Actions:
+            - Name: Build
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Version: 1
+                Provider: CodeBuild
+              Configuration:
+                ProjectName: !Ref CodeBuildProject
+              RunOrder: 1
+              InputArtifacts:
+                - Name: SourceArtifact
+              OutputArtifacts:
+                - Name: BuildArtifact
+        - Name: Deploy
+          Actions:
+            - Name: Deploy
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Version: 1
+                Provider: CodeDeployToECS
+              Configuration:
+                AppSpecTemplateArtifact: SourceArtifact
+                TaskDefinitionTemplateArtifact: SourceArtifact
+                ApplicationName: !Sub ${EnvPrefix}-sample-AppECS-service
+                DeploymentGroupName: !Sub ${EnvPrefix}-sample-DgpECS-service
+                Image1ArtifactName:  BuildArtifact
+                Image1ContainerName: IMAGE1_NAME
+              InputArtifacts:
+                - Name: SourceArtifact
+                - Name: BuildArtifact
+              Region: !Ref AWS::Region
