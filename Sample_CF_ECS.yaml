@@ -1,0 +1,61 @@
+AWSTemplateFormatVersion: 2010-09-09
+Parameters:
+  EnvPrefix:
+    Type: String
+  EcsServiceSecurityGroups:
+    Type: CommaDelimitedList
+  EcsServiceSubnets:
+    Type: CommaDelimitedList
+  SampleTaskDefinition:
+    Type: String
+  SampleTargetGroupBlue:
+    Type: String
+
+Resources:
+  SampleCodeDeployServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${EnvPrefix}-SampleCodeDeployServiceRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codedeploy.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMReadOnlyAccess
+        - arn:aws:iam::aws:policy/AWSCodeDeployRoleForECS
+
+  SampleCluster:
+      Type: AWS::ECS::Cluster
+      Properties:
+        ClusterName: !Sub ${EnvPrefix}-SampleECSCluster
+        ClusterSettings:
+          - Name: containerInsights
+            Value: enabled
+
+  SampleService:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !Ref SampleCluster
+      DesiredCount: 1
+      DeploymentController:
+        Type: CODE_DEPLOY
+      LaunchType: FARGATE
+      TaskDefinition: !Ref SampleTaskDefinition
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups: !Ref EcsServiceSecurityGroups
+          Subnets: !Ref EcsServiceSubnets
+      LoadBalancers:
+        - TargetGroupArn: !Ref SampleTargetGroupBlue
+          ContainerName: !Sub ${EnvPrefix}-SampleContainer
+          ContainerPort: 80
+
+Outputs:
+  SampleCluster:
+    Value: !Ref SampleCluster
+  SampleService:
+    Value: !GetAtt SampleService.Name

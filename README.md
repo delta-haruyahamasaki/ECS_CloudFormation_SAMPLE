@@ -5,13 +5,35 @@ VPC、Auroraスナップショット、コンテナイメージを指定し実�
 ## 構成
 ![構成図](./image/構成図_ECS_Sample.png)
 
-## 自動で作成されるリソース
+## CloudFormation テンプレートファイル
+#### Aurora構築用ファイル
+- Sample_CF_Aurora.yaml
+
+#### その他のリソース構築用ファイル
+スタックのネストを利用し、機能別にファイルを分けています。
+ネストされたスタックファイルをS3にアップロードし、ルートスタックファイルでS3のファイルを指定します。
+<br>参考：<br>https://dev.classmethod.jp/articles/create-own-verification-environment-using-cfn-nested-stacks/
+- ルートスタック
+  - Sample_CF_Root.yaml
+- ネストされたスタック
+  - Sample_CF_Network.yaml
+  - Sample_CF_TaskDefinition.yaml
+  - Sample_CF_ECS.yaml
+  - Sample_CF_CICD_Role.yaml
+  - Sample_CF_CodeBuild
+  - Sample_CF_CodeDeploy
+  - Sample_CF_CodePipeline
+
+## テンプレートファイル別 自動作成リソース
 #### Sample_CF_Aurora.yaml
 - Aurora
   - AuroraDBクラスター
   - AuroraDBインスタンス
 
-#### Sample_CF_ECS_CICD.yaml
+#### Sample_CF_Root.yaml
+- CloudFormation実行時に使用するルートスタック。すべてのネストされたスタックを作成します。
+
+#### Sample_CF_Network.yaml
 - ネットワーク
   - Network Load Balancer
   - TargetGroup(Blue)
@@ -19,49 +41,41 @@ VPC、Auroraスナップショット、コンテナイメージを指定し実�
   - Listener(Blue)
   - Listener(Green)
 
-<br>
-
+#### Sample_CF_TaskDefinition.yaml
 - タスク定義
   - コンテナ用LogGroup
   - タスク実行ロール
   - タスク定義
 
-<br>
-
+#### Sample_CF_ECS.yaml
 - ECSクラスター
   - ECSクラスター
   - ECSサービス
 
-<br>
-
+#### Sample_CF_CICD_Role.yaml
 - CI/CD用 IAM Role, Policy
   - CodeBuild IAM Role
   - CodeBuild IAM Policy
   - CodeDeploy IAM Role
   - CodeDeploy IAM Policy
-
-<br>
-
 - カスタムリソースLambda用 IAM Role, Policy
   - Lambda IAM Role
   - Lambda IAM Policy
 
-<br>
-
-- Blue Green Artifact S3バケット
-  - S3バケット
-
-<br>
-
+#### Sample_CF_CodeBuild
 - Code Build
   - CodeBuild用LogGroup
   - CodeBuild
 
-<br>
-
+#### Sample_CF_CodeDeploy
 - Code Deploy
   - アプリケーション
   - デプロイグループ
+
+#### Sample_CF_CodePipeline
+- Blue Green Artifact S3バケット
+  - S3バケット
+- Code Pipeline
 
 ## 実行時に必要なパラメータ
 #### Sample_CF_Aurora.yaml
@@ -72,7 +86,9 @@ VPC、Auroraスナップショット、コンテナイメージを指定し実�
 - サブネットグループ名
 - セキュリティグループ
 
-#### Sample_CF_ECS_CICD.yaml
+#### Sample_CF_Root.yaml
+- 環境(hotfix/candidate)
+- ネストされたスタックファイル格納 S3バケット
 - NLB サブネット
 - ターゲットグループ VPC ID
 - ECSサービス作成時に指定するコンテナイメージ
@@ -88,6 +104,7 @@ VPC、Auroraスナップショット、コンテナイメージを指定し実�
 - セキュリティグループ
 
 #### Sample_CF_ECS_CICD.yaml
+- ネストされたスタックファイル格納用 S3バケット
 - VPC/サブネット
 - ECR コンテナイメージ
 - ECS用 セキュリティグループ
@@ -113,7 +130,6 @@ VPC、Auroraスナップショット、コンテナイメージを指定し実�
 #### ECSクラスター
 - ECSクラスターとECSサービスが作成されます。
 - 初回構築時は前項で作成したタスク定義のECSタスクがデプロイされます。
-- ECSサービスはNLB作成後に構築を開始する必要があるため、サンプルではNLBのリスナーにターゲットグループが登録されたのちに構築が開始されるよう依存設定を追加しています。
 
 #### CodeBuild
 - CodeBuild用ロググループとCodeBuildが作成されます。
@@ -134,8 +150,9 @@ VPC、Auroraスナップショット、コンテナイメージを指定し実�
 
 ## 使用の流れ
 1. 既存のサブネットグループ、Auroraスナップショットを指定し、Sample_CF_Aurora.yamlを実行。
-2. 作成されたAuoraのエンドポイント名をパラメータストアに手動で登録。
-3. 既存のVPC/サブネット、コンテナイメージを指定し、Sample_CF_ECS_CICD.yamlを実行。
-4. 環境構築後、S3バケットにソースコードのZIPファイルをアップロードすることで、パイプラインが起動しコンテナがデプロイされる。
-5. NLB DNS名をRoute53のレコードに登録。
-6. 登録したドメインから構築した環境にアクセス。
+2. 作成されたAuroraのエンドポイント名をパラメータストアに手動で登録。
+3. ネストされたスタックファイルをS3バケットにアップロード。
+4. 既存のVPC/サブネット、コンテナイメージを指定し、Sample_CF_Root.yamlを実行。
+5. 環境構築後、S3バケットにソースコードのZIPファイルをアップロードすることで、パイプラインが起動しコンテナがデプロイされる。
+6. NLB DNS名をRoute53のレコードに登録。
+7. 登録したドメインから構築した環境にアクセス。

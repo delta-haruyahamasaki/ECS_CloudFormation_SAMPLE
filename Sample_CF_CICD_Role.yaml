@@ -1,0 +1,175 @@
+AWSTemplateFormatVersion: 2010-09-09
+Parameters:
+  EnvPrefix:
+    Type: String
+
+Resources:
+  CodeBuildServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${EnvPrefix}-sample-codebuild-service-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser
+
+  CodeBuildServicePolicy:
+    DependsOn: CodePipelineServiceRole
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub ${EnvPrefix}-sample-codebuild-service-policy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Resource: "*"
+            Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+          - Resource: "arn:aws:s3:::*"
+            Effect: Allow
+            Action:
+              - s3:GetObject
+              - s3:PutObject
+              - s3:GetObjectVersion
+              - s3:GetBucketAcl
+              - s3:GetBucketLocation
+          - Resource: "*"
+            Effect: Allow
+            Action:
+              - codebuild:CreateReportGroup
+              - codebuild:CreateReport
+              - codebuild:UpdateReport
+              - codebuild:BatchPutTestCases
+              - codebuild:BatchPutCodeCoverages
+      Roles:
+        - !Ref CodeBuildServiceRole
+
+  CodeDeployServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${EnvPrefix}-sample-codedeploy-service-role
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codedeploy.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AWSCodeDeployRoleForECS
+        - arn:aws:iam::aws:policy/AmazonSSMReadOnlyAccess
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser
+
+  CodePipelineServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${EnvPrefix}-sample-codepipeline-service-role
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action: sts:AssumeRole
+
+  CodePipelineServicePolicy:
+    Type: AWS::IAM::Policy
+    DependsOn: CodePipelineServiceRole
+    Properties:
+      PolicyName: !Sub ${EnvPrefix}-sample-codepipeline-service-policy
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Resource: "*"
+            Effect: Allow
+            Action:
+              - codecommit:GetRepository
+              - codecommit:GetBranch
+              - codecommit:GetCommit
+              - codecommit:ListBranches
+              - codecommit:GetUploadArchiveStatus
+              - codecommit:UploadArchive
+              - codecommit:CancelUploadArchive
+              - codedeploy:CreateDeployment
+              - codedeploy:GetApplication
+              - codedeploy:GetApplicationRevision
+              - codedeploy:GetDeployment
+              - codedeploy:GetDeploymentConfig
+              - codedeploy:RegisterApplicationRevision
+              - codebuild:StartBuild
+              - codebuild:StopBuild
+              - codebuild:BatchGet*
+              - codebuild:Get*
+              - codebuild:List*
+              - codecommit:GetBranch
+              - codecommit:GetCommit
+              - s3:*
+              - ecs:*
+              - elasticloadbalancing:*
+              - autoscaling:*
+              - cloudformation:*
+              - iam:PassRole
+              - codestar-connections:UseConnection
+      Roles:
+        - !Ref CodePipelineServiceRole
+
+
+####### IAMRole For CustomResource Lambda #######
+
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${EnvPrefix}-sample-bg-deploy-groupe-lambda-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSCodeDeployFullAccess
+
+  LambdaPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub ${EnvPrefix}-sample-bg-deploy-groupe-lambda-policy
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - ec2:*
+              - logs:*
+            Resource: '*'
+          - Effect: Allow
+            Resource: '*'
+            Action:
+              - iam:PassRole
+            Condition:
+              StringEqualsIfExists:
+                iam:PassedToService:
+                  - codedeploy.amazonaws.com
+      Roles:
+        - !Ref LambdaRole
+
+Outputs:
+  CodeBuildServiceRole:
+    Value: !Ref CodeBuildServiceRole
+  CodeDeployServiceRole:
+    Value: !GetAtt CodeDeployServiceRole.Arn
+  CodePipelineServiceRole:
+    Value: !GetAtt CodePipelineServiceRole.Arn
+  LambdaRole:
+    Value: !GetAtt LambdaRole.Arn

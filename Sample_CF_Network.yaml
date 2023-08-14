@@ -1,0 +1,66 @@
+AWSTemplateFormatVersion: 2010-09-09
+Parameters:
+  EnvPrefix:
+    Type: String
+  NlbSubnets:
+    Type: CommaDelimitedList
+  TargetGroupVpcId:
+    Type: String
+
+
+Resources:
+  SampleNLB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub ${EnvPrefix}-SampleNLB
+      Subnets: !Ref NlbSubnets
+      Type: network
+      Scheme: internal
+
+  SampleTargetGroupBlue:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub ${EnvPrefix}-SampleTargetGroupBlue
+      Port: 80
+      Protocol: TCP
+      VpcId: !Ref TargetGroupVpcId
+      TargetType: ip
+
+  SampleListenerBlue:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref SampleNLB
+      Port: 80
+      Protocol: TCP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref SampleTargetGroupBlue
+
+  SampleTargetGroupGreen:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub ${EnvPrefix}-SampleTargetGroupGreen
+      Port: 80
+      Protocol: TCP
+      VpcId: !Ref TargetGroupVpcId
+      TargetType: ip
+
+  SampleListenerGreen:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref SampleNLB
+      Port: 10080
+      Protocol: TCP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref SampleTargetGroupGreen
+
+Outputs:
+  SampleTargetGroupBlue:
+    Value: !Ref SampleTargetGroupBlue
+  SampleTargetGroupGreen:
+    Value: !Ref SampleTargetGroupGreen
+  SampleListenerBlue:
+    Value: !Ref SampleListenerBlue
+  SampleListenerGreen:
+    Value: !Ref SampleListenerGreen

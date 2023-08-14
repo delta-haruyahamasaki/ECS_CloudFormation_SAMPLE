@@ -17,10 +17,6 @@ Parameters:
     Description: Instance class for the restored Aurora MySQL instance
     Type: String
     Default: db.t3.small
-  DBEngineVersion:
-    Description: Engine Version for the restored Aurora MySQL cluster
-    Type: String
-    Default: 8.0.28
   DBSubnetGroupName:
     Description: Name of the DB subnet group
     Type: String
@@ -29,13 +25,11 @@ Parameters:
     Description: List of Security Group IDs for the database cluster and instance
     Type: List<AWS::EC2::SecurityGroup::Id>
 
-
 Resources:
   AuroraDBCluster:
     Type: AWS::RDS::DBCluster
     Properties:
       Engine: aurora-mysql
-      EngineVersion: !Ref DBEngineVersion
       DBClusterIdentifier: !Ref DBClusterIdentifier
       SnapshotIdentifier: !Ref DBClusterSnapshotIdentifier
       EngineMode: provisioned
