@@ -16,10 +16,26 @@ Metadata:
           - TemplateBucketName
       -
         Label:
+          default: Aurora Configuration
+        Parameters:
+          - DBClusterIdentifier
+          - DBClusterSnapshotIdentifier
+          - DBInstanceIdentifier
+          - DBInstanceClass
+          - DBSubnetGroupName
+          - VpcSecurityGroupIds
+      -
+        Label:
           default: Nlb Configuration
         Parameters:
           - NlbSubnets
           - TargetGroupVpcId
+      -
+        Label:
+          default: Route53 Configuration
+        Parameters:
+          - HostZoneName
+          - HostZoneId
       -
         Label:
           default: ECS Configuration
@@ -44,11 +60,39 @@ Parameters:
   TemplateBucketName:
     Description: S3Bucket Name for Location of file containing the template body
     Type: String
+  DBClusterIdentifier:
+    Description: Identifier for the restored Aurora MySQL cluster
+    Type: String
+    Default: Sample-Cluster
+  DBClusterSnapshotIdentifier:
+    Description: Identifier of the Aurora MySQL cluster snapshot to restore from
+    Type: String
+  DBInstanceIdentifier:
+    Description: Identifier for the restored Aurora MySQL instance
+    Type: String
+    Default: Sample-Instance
+  DBInstanceClass:
+    Description: Instance class for the restored Aurora MySQL instance
+    Type: String
+    Default: db.t3.medium
+  DBSubnetGroupName:
+    Description: Name of the DB subnet group
+    Type: String
+    Default: default
+  VpcSecurityGroupIds:
+    Description: List of Security Group IDs for the database cluster and instance
+    Type: List<AWS::EC2::SecurityGroup::Id>
   NlbSubnets:
     Description: Subnets for Network Load Balancer
     Type: List<AWS::EC2::Subnet::Id>
   TargetGroupVpcId:
     Description: VPC that contains the instances you want to include in your target group
+    Type: String
+  HostZoneName:
+    Description: Route53 Host Zone Name
+    Type: String
+  HostZoneId:
+    Description: Route53 Host Zone ID
     Type: String
   ContainerDefinitionsImage:
     Description: Image for ECS service is created
@@ -70,6 +114,40 @@ Parameters:
 
 Resources:
 # ------------------------------------------------------------#
+#  Aurora/Parameter Store
+# ------------------------------------------------------------#
+
+####### Aurora #######
+
+  AuroraDBStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://${TemplateBucketName}.s3.${AWS::Region}.amazonaws.com/Sample_CF_Aurora.yaml"
+      Parameters:
+        EnvPrefix: !Ref EnvPrefix
+        DBClusterIdentifier: !Ref DBClusterIdentifier
+        DBClusterSnapshotIdentifier: !Ref DBClusterSnapshotIdentifier
+        DBInstanceIdentifier: !Ref DBInstanceIdentifier
+        DBInstanceClass: !Ref DBInstanceClass
+        DBSubnetGroupName: !Ref DBSubnetGroupName
+        VpcSecurityGroupIds: !Join
+          - ','
+          - !Ref VpcSecurityGroupIds
+
+
+####### Parameter Store #######
+
+  ParameterStoreStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - AuroraDBStack
+    Properties:
+      TemplateURL: !Sub "https://${TemplateBucketName}.s3.${AWS::Region}.amazonaws.com/Sample_CF_SSM.yaml"
+      Parameters:
+        AuoraEndpoint: !GetAtt AuroraDBStack.Outputs.AuoraEndpoint
+
+
+# ------------------------------------------------------------#
 #  NLB/ECS
 # ------------------------------------------------------------#
 
@@ -85,6 +163,8 @@ Resources:
           - ','
           - !Ref NlbSubnets
         TargetGroupVpcId: !Ref TargetGroupVpcId
+        HostZoneName: !Ref HostZoneName
+        HostZoneId: !Ref HostZoneId
 
 
 ####### Task Definition #######
@@ -105,6 +185,7 @@ Resources:
     DependsOn:
       - NetworkStack
       - TaskDefinitionStack
+      - AuroraDBStack
     Properties:
       TemplateURL: !Sub "https://${TemplateBucketName}.s3.${AWS::Region}.amazonaws.com/Sample_CF_ECS.yaml"
       Parameters:

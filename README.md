@@ -6,32 +6,31 @@ VPC、Auroraスナップショット、コンテナイメージを指定し実�
 ![構成図](./image/構成図_ECS_Sample.png)
 
 ## CloudFormation テンプレートファイル
-#### Aurora構築用ファイル
-- Sample_CF_Aurora.yaml
-
-#### その他のリソース構築用ファイル
+#### リソース構築用ファイル
 スタックのネストを利用し、機能別にファイルを分けています。
 ネストされたスタックファイルをS3にアップロードし、ルートスタックファイルでS3のファイルを指定します。
 <br>参考：<br>https://dev.classmethod.jp/articles/create-own-verification-environment-using-cfn-nested-stacks/
 - ルートスタック
   - Sample_CF_Root.yaml
 - ネストされたスタック
+  - Sample_CF_Aurora.yaml
   - Sample_CF_Network.yaml
   - Sample_CF_TaskDefinition.yaml
   - Sample_CF_ECS.yaml
   - Sample_CF_CICD_Role.yaml
-  - Sample_CF_CodeBuild
-  - Sample_CF_CodeDeploy
-  - Sample_CF_CodePipeline
+  - Sample_CF_CodeBuild.yaml
+  - Sample_CF_CodeDeploy.yaml
+  - Sample_CF_CodePipeline.yaml
+  - Sample_CF_SSM.yaml
 
 ## テンプレートファイル別 自動作成リソース
+#### Sample_CF_Root.yaml
+- CloudFormation実行時に使用するルートスタック。すべてのネストされたスタックを作成します。
+
 #### Sample_CF_Aurora.yaml
 - Aurora
   - AuroraDBクラスター
   - AuroraDBインスタンス
-
-#### Sample_CF_Root.yaml
-- CloudFormation実行時に使用するルートスタック。すべてのネストされたスタックを作成します。
 
 #### Sample_CF_Network.yaml
 - ネットワーク
@@ -40,6 +39,7 @@ VPC、Auroraスナップショット、コンテナイメージを指定し実�
   - TargetGroup(Green)
   - Listener(Blue)
   - Listener(Green)
+  - Route53 レコード
 
 #### Sample_CF_TaskDefinition.yaml
 - タスク定義
@@ -77,20 +77,24 @@ VPC、Auroraスナップショット、コンテナイメージを指定し実�
   - S3バケット
 - Code Pipeline
 
+#### Sample_CF_SSM
+- カスタムリソースLambda用 IAM Role
+- SSMパラメータストア
+
 ## 実行時に必要なパラメータ
-#### Sample_CF_Aurora.yaml
+#### Sample_CF_Root.yaml
+- 環境(hotfix/candidate)
+- ネストされたスタックファイル格納 S3バケット
 - Auroraクラスター名
 - Auroraインスタンス名
 - Auroraクラスタースナップショット名
 - インスタンスクラス
 - サブネットグループ名
 - セキュリティグループ
-
-#### Sample_CF_Root.yaml
-- 環境(hotfix/candidate)
-- ネストされたスタックファイル格納 S3バケット
 - NLB サブネット
 - ターゲットグループ VPC ID
+- Route53 ホストゾーンName
+- Route53 ホストゾーンID
 - ECSサービス作成時に指定するコンテナイメージ
 - ECSサービス セキュリティグループ
 - ECSサービス サブネット
@@ -98,12 +102,10 @@ VPC、Auroraスナップショット、コンテナイメージを指定し実�
 - CodePipeline Sorce S3オブジェクトキー
 
 ## 実行時に必要なリソース
-#### Sample_CF_Aurora.yaml
+#### Sample_CF_Root.yaml
 - Auroraクラスタースナップショット
 - サブネットグループ
 - セキュリティグループ
-
-#### Sample_CF_ECS_CICD.yaml
 - ネストされたスタックファイル格納用 S3バケット
 - VPC/サブネット
 - ECR コンテナイメージ
@@ -111,6 +113,7 @@ VPC、Auroraスナップショット、コンテナイメージを指定し実�
 - CodePipeline Sorce S3バケット
 - CodePipeline Sorce オブジェクト
 - Systems Manager パラメータストア
+- Route53 ホストゾーン
 
 ## 詳細
 #### Auora
@@ -119,7 +122,7 @@ VPC、Auroraスナップショット、コンテナイメージを指定し実�
 
 #### NLB
 - コンテナ接続用のNLBです。
-- 構築後DNS名でアクセス、またはDNS名をRoute53レコードに登録いただくことで指定のドメインからコンテナにアクセス可能です。
+- NLB作成後、指定のRoute53ホストゾーンにDNS名のエイリアスレコードが追加されます。
 - BGデプロイを行うため、Blue用、Green用のターゲットグループが作成され、それぞれリスナーに登録されます。
 - BlueはTCP:80、GreenはTCP:10080のプロトコル:ポートでそれぞれのターゲットグループへ転送されます。
 
@@ -147,6 +150,11 @@ VPC、Auroraスナップショット、コンテナイメージを指定し実�
 - アーティファクト用S3バケットとCodePipelineが作成されます。
 - パラメータで指定したS3バケット、オブジェクトキーが、Sourceステージに登録されます。
 - CFスタックを削除する際、アーティファクト用S3バケット内のオブジェクトを手動ですべて削除する必要があります。
+
+#### SSMパラメータストア
+- 構築したDBのエンドポイント名が「/SAMPLE/DB_HOST」と命名されたSSMパラメータストアに追加されます。
+- SecureString パラメータタイプがCloudFormationでサポートされていないことから、CodeDeployはAWS Lambda-backed カスタムリソースを利用しています。
+
 
 ## 使用の流れ
 1. 既存のサブネットグループ、Auroraスナップショットを指定し、Sample_CF_Aurora.yamlを実行。

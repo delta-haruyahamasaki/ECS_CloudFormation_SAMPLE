@@ -1,0 +1,93 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Restore Aurora MySQL Cluster and Instance from Cluster Snapshot
+
+Parameters:
+  AuoraEndpoint:
+    Type: String
+
+Resources:
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: sample-ssm-lambda-role-2
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AmazonSSMFullAccess
+
+  LambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    DeletionPolicy: 'Delete'
+    Properties:
+      Code:
+        ZipFile: |
+          import boto3
+          import json
+          import logging
+          import cfnresponse
+          from botocore.exceptions import ClientError
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+          client = boto3.client('ssm')
+
+          def lambda_handler(event, context):
+
+              requestType = event['RequestType']
+              AuoraEndpoint = event['ResourceProperties']['AuoraEndpoint']
+
+              print('REQUEST RECEIVED:\n' + json.dumps(event))
+              responseData = {}
+              try:
+                if requestType == "Create":
+                  res = client.put_parameter(
+                      Name='/SAMPLE/DB_HOST',
+                      Value=AuoraEndpoint,
+                      Type='SecureString',
+                      Overwrite=True,
+                      Tier='Standard',
+                      DataType='text'
+                  )
+                  logger.info(res)
+                  logger.info("SUCCESS: SSM Parameter created.")
+                elif requestType == "Delete":
+                  res = client.delete_parameter(
+                      Name='/SAMPLE/DB_HOST'
+                  )
+                  logger.info(res)
+                  logger.info("SUCCESS: SSM Parameter deleted.")
+              except ClientError as e:
+                  logger.error("ERROR: Something error!")
+                  logger.error(e)
+                  responseData = {'error': str(e)}
+                  cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
+              else:
+                  if requestType == "Create":
+                    logger.info(res)
+                    logger.info(
+                        "SUCCESS: SSM Parameter created.")
+                    return cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+                  elif requestType == "Delete":
+                    logger.info(res)
+                    logger.info(
+                        "SUCCESS: SSM Parameter deleted.")
+                    return cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaRole.Arn
+      Runtime: python3.11
+      Timeout: 10
+
+  SSMParameter:
+    Type: Custom::SSMParameter
+    DependsOn: LambdaRole
+    Properties:
+      ServiceToken: !GetAtt LambdaFunction.Arn
+      AuoraEndpoint: !Ref AuoraEndpoint

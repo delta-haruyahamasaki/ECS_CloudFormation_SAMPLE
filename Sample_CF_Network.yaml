@@ -6,6 +6,10 @@ Parameters:
     Type: CommaDelimitedList
   TargetGroupVpcId:
     Type: String
+  HostZoneName:
+    Type: String
+  HostZoneId:
+    Type: String
 
 
 Resources:
@@ -54,6 +58,16 @@ Resources:
       DefaultActions:
         - Type: forward
           TargetGroupArn: !Ref SampleTargetGroupGreen
+
+  SampleRecordSet:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      AliasTarget:
+        DNSName: !GetAtt SampleNLB.DNSName
+        HostedZoneId: !GetAtt SampleNLB.CanonicalHostedZoneID
+      Name: !Sub ${EnvPrefix}-api.${HostZoneName}
+      HostedZoneId: !Ref HostZoneId
+      Type: A
 
 Outputs:
   SampleTargetGroupBlue:

@@ -121,9 +121,6 @@ Resources:
       Roles:
         - !Ref CodePipelineServiceRole
 
-
-####### IAMRole For CustomResource Lambda #######
-
   LambdaRole:
     Type: AWS::IAM::Role
     Properties:

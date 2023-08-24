@@ -2,35 +2,27 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: Restore Aurora MySQL Cluster and Instance from Cluster Snapshot
 
 Parameters:
-  DBClusterIdentifier:
-    Description: Identifier for the restored Aurora MySQL cluster
+  EnvPrefix:
     Type: String
-    Default: Sample-Cluster
+  DBClusterIdentifier:
+    Type: String
   DBClusterSnapshotIdentifier:
-    Description: Identifier of the Aurora MySQL cluster snapshot to restore from
     Type: String
   DBInstanceIdentifier:
-    Description: Identifier for the restored Aurora MySQL instance
     Type: String
-    Default: Sample-Instance
   DBInstanceClass:
-    Description: Instance class for the restored Aurora MySQL instance
     Type: String
-    Default: db.t3.small
   DBSubnetGroupName:
-    Description: Name of the DB subnet group
     Type: String
-    Default: default
   VpcSecurityGroupIds:
-    Description: List of Security Group IDs for the database cluster and instance
-    Type: List<AWS::EC2::SecurityGroup::Id>
+    Type: CommaDelimitedList
 
 Resources:
   AuroraDBCluster:
     Type: AWS::RDS::DBCluster
     Properties:
       Engine: aurora-mysql
-      DBClusterIdentifier: !Ref DBClusterIdentifier
+      DBClusterIdentifier: !Sub ${EnvPrefix}-${DBClusterIdentifier}
       SnapshotIdentifier: !Ref DBClusterSnapshotIdentifier
       EngineMode: provisioned
       DBSubnetGroupName: !Ref DBSubnetGroupName
@@ -40,7 +32,11 @@ Resources:
     Type: AWS::RDS::DBInstance
     Properties:
       Engine: aurora-mysql
-      DBInstanceIdentifier: !Ref DBInstanceIdentifier
+      DBInstanceIdentifier: !Sub ${EnvPrefix}-${DBInstanceIdentifier}
       DBClusterIdentifier: !Ref AuroraDBCluster
       DBInstanceClass: !Ref DBInstanceClass
       DBSubnetGroupName: !Ref DBSubnetGroupName
+
+Outputs:
+  AuoraEndpoint:
+    Value: !GetAtt AuroraDBCluster.Endpoint.Address
